@@ -19,6 +19,6 @@ export async function subcommandstart() {
       await COMMANDS[command](ret["_"]);
     }
   } catch (error) {
-    if (error.message) console.error(error.message)
+    if (error.message) console.error(error.message);
   }
 }
