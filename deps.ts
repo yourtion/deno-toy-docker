@@ -5,4 +5,6 @@ export { readerFromStreamReader } from "https://deno.land/std@0.90.0/io/streams.
 export { Untar } from "https://deno.land/std@0.90.0/archive/tar.ts";
 export { ensureFile } from "https://deno.land/std@0.90.0/fs/ensure_file.ts";
 export { ensureDir } from "https://deno.land/std@0.90.0/fs/ensure_dir.ts";
+export { exists } from "https://deno.land/std@0.90.0/fs/exists.ts";
 export { assertEquals } from "https://deno.land/std@0.90.0/testing/asserts.ts";
+export * as datetime from "https://deno.land/std@0.90.0/datetime/mod.ts";
