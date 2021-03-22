@@ -1,4 +1,11 @@
+let enableDebug = false;
+
+export function setDebug() {
+  enableDebug = true;
+}
+
 export function debug(...data: any[]) {
+  if(!enableDebug) return;
   console.log(...data);
 }
 
