@@ -1,6 +1,7 @@
 import { datetime, exists, path } from "./deps.ts";
 import { subcommand, subcommandstart } from "./cli.ts";
 import { cliOut, exec } from "./utils.ts";
+import { interfaceExists } from "./network.ts";
 import * as log from "./log.ts";
 
 // Docker镜像源地址
@@ -25,7 +26,35 @@ subcommand("run", cmdRun);
 subcommand("exec", cmdExec);
 subcommand("logs", cmdLogs);
 subcommand("*", cmdHelp);
-subcommandstart();
+init().then(() => {
+  subcommandstart();
+});
+
+async function init() {
+  if (!(await interfaceExists("tocker0"))) {
+    const tmpFile = await Deno.makeTempFile();
+    await Deno.writeTextFile(
+      tmpFile,
+      `
+# 配置tocker网桥
+ip link del tocker0
+ip link add name tocker0 type bridge
+ip link set tocker0 up
+ip addr add 172.15.0.1/16 dev tocker0
+
+# 设置IP转发
+echo 1 > /proc/sys/net/ipv4/ip_forward
+
+# 将源地址为172.15.0.0/16并且不是tocker0网卡发出的数据进行源地址转换
+# iptables -F && iptables -X
+iptables -t nat -A POSTROUTING -o tocker0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+iptables -t nat -L -n
+    `.trim(),
+    );
+    console.log(await exec("sh", tmpFile));
+  }
+}
 
 async function cmdPull(args: any) {
   const { longName, tag } = parseImageName(args[1])!;
@@ -41,7 +70,7 @@ async function cmdPull(args: any) {
   for (const item of info.fsLayers) {
     const url = `${registryMirror}/v2/${longName}/blobs/${item.blobSum}`;
     console.log(url);
-
+    // TODO: 替换为原生方法，同时校验哈希
     await exec("curl", "-L", "-o", tmpTar, url);
     await exec("tar", "-xf", tmpTar, "-C", rootfs);
   }
@@ -70,8 +99,16 @@ async function cmdImages() {
     );
   });
 }
-async function cmdRm() {}
-async function cmdRmi() {}
+async function cmdRm(args: any) {}
+async function cmdRmi(args: any) {
+  const name = args[1];
+  const imageInfo = await findImage(name);
+  if (imageInfo) {
+    await Deno.remove(imageInfo.path, { recursive: true });
+    return log.info(`已删除镜像${name}`);
+  }
+  return log.fatal(`镜像${name}不存在`);
+}
 async function cmdPs() {}
 async function cmdRun() {}
 async function cmdExec() {}
@@ -148,4 +185,14 @@ async function loadLocalImages() {
     }
   }
   return images;
+}
+
+async function findImage(name: string) {
+  const { longName, tag } = parseImageName(name);
+  const images = await loadLocalImages();
+  return Object.keys(images)
+    .map((id) => images[id])
+    .find((item) =>
+      item.id === name || item.fullName === getImageFullName(longName, tag)
+    );
 }
