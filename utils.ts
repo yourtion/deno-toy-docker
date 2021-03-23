@@ -28,6 +28,13 @@ export async function exec(...cmds: string[]) {
 }
 
 /**
+ * 执行命令行操作 2
+ */
+export function exec2(cmds: string) {
+  return exec(...cmds.split(" "));
+}
+
+/**
  * 通过 cli 输出
  * @param pre 前缀
  * @param sub 后缀

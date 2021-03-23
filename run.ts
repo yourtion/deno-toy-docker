@@ -109,7 +109,111 @@ async function cmdRmi(args: any) {
   return log.fatal(`镜像${name}不存在`);
 }
 async function cmdPs() {}
-async function cmdRun() {}
+async function cmdRun(args: any) {
+  const imageName = args[1];
+  const cmd = args[2];
+
+  const imageInfo = await findImage(imageName);
+  if (!imageInfo) {
+    return log.fatal(`镜像${imageName}不存在`);
+  }
+
+  const imageManifestsF = await Deno.readFile(
+    path.join(imageInfo.path, "img.manifests"),
+  );
+  const imageManifests = JSON.parse(new TextDecoder().decode(imageManifestsF));
+  const imageConfig = JSON.parse(
+    (imageManifests.history && imageManifests.history[0] &&
+      imageManifests.history[0].v1Compatibility) || "{}",
+  ).config;
+  const imageRootfs = path.join(imageInfo.path, "rootfs");
+
+  const id = Math.random().toString(36).substring(7).toLowerCase();
+  const dir = path.join(containerDataPath, id);
+  const rootfs = path.join(dir, "rootfs");
+  const mountDir = path.join(dir, "mount");
+  const workDir = path.join(dir, "work");
+  await Deno.mkdir(dir, { recursive: true });
+  await Deno.writeTextFile(
+    path.join(dir, "image.json"),
+    JSON.stringify(imageInfo),
+  );
+
+  // 挂载虚拟文件系统
+  await Deno.mkdir(mountDir, { recursive: true });
+  await Deno.mkdir(rootfs, { recursive: true });
+  await Deno.mkdir(workDir, { recursive: true });
+
+  const mountRet = await exec2(
+    `mount -t overlay -o lowerdir="${imageRootfs}",upperdir="${rootfs}",workdir="${workDir}" "tocker_${id}" "${mountDir}"`,
+  );
+  log.debug({ mountRet });
+
+  if (imageConfig && imageConfig.Volumes) {
+    const keys = Object.keys(imageConfig.Volumes);
+    for (const n of keys) {
+      await Deno.mkdir(rootfs + n, { recursive: true });
+    }
+  }
+
+  // 配置虚拟网络
+  const ip = `${parseInt(String(Math.random() * 254), 10) +
+    1}.${parseInt(String(Math.random() * 254), 10) + 1}`;
+  await exec2(`ip link add dev veth0_${id} type veth peer name veth1_${id}`);
+  await exec2(`ip link set dev veth0_${id} up`);
+  await exec2(`ip link set veth0_${id} master tocker0`);
+  await exec2(`ip netns add netns_${id}`);
+  await exec2(`ip link set veth1_${id} netns netns_${id}`);
+  await exec2(`ip netns exec netns_${id} ip link set dev lo up`);
+  // await exec2(`ip netns exec netns_${id} ip link set veth1_${id} address 02:42:ac:11:00"${mac}"`);
+  await exec2(
+    `ip netns exec netns_${id} ip addr add 172.15.${ip}/16 dev veth1_${id}`,
+  );
+  await exec2(`ip netns exec netns_${id} ip link set dev veth1_${id} up`);
+  await exec2(`ip netns exec netns_${id} ip route add default via 172.15.0.1`);
+
+  // cgroups启动程序
+  await exec2(`cgcreate -g "${cgroups}:/${id}"`);
+  await exec2(`cgset -r cpu.shares="512" "${id}"`);
+  await exec2(`cgset -r memory.limit_in_bytes="${512 * 1000000}" "${id}"`);
+  await exec2(`mkdir -p "${mountDir}/etc"`);
+  await exec2(
+    `echo "nameserver 114.114.114.114" > "${mountDir}/etc/resolv.conf"`,
+  );
+  const cgCmd = [
+    `cgexec -g "${cgroups}:${id}"`,
+    `ip netns exec netns_${id}`,
+    `unshare -fmuip --mount-proc`,
+    `/usr/bin/env -i`,
+  ];
+  if (Deno.env.get("TERM")) cgCmd.push(`TERM=${Deno.env.get("TERM")}`);
+  if (imageConfig.Env) {
+    imageConfig.Env.forEach((line: string) => cgCmd.push(line));
+  }
+  cgCmd.push(`chroot "${mountDir}"`);
+
+  // 进入之后启动的命令
+  let entryCmd = cmd;
+  if (!entryCmd) {
+    if (imageConfig.Cmd) {
+      entryCmd = imageConfig.Cmd.join(" ");
+    } else {
+      log.fatal("缺少入口命令");
+    }
+  }
+  if (await exists(path.join(mountDir, "bin", "sh"))) {
+    cgCmd.push(
+      `/bin/sh -c "/bin/mount -t proc proc /proc && hostname ${id} && ${entryCmd}"`,
+    );
+  } else {
+    // 不存在/bin/sh文件从情况下，直接执行命令，但是不支持一些初始化配置
+    cgCmd.push(entryCmd);
+  }
+
+  const finalCmd = cgCmd.join(" ");
+  log.info(`RUN: ${finalCmd}`);
+  // pty(finalCmd);
+}
 async function cmdExec() {}
 async function cmdLogs() {}
 async function cmdHelp() {
