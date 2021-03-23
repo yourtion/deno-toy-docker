@@ -1,6 +1,6 @@
 import { datetime, exists, path } from "./deps.ts";
-import { subcommand, subcommandstart } from "./cli.ts";
-import { cliOut, exec } from "./utils.ts";
+import { subcommand, subCommandStart } from "./cli.ts";
+import { cliOut, exec, exec2 } from "./utils.ts";
 import { interfaceExists } from "./network.ts";
 import * as log from "./log.ts";
 
@@ -16,19 +16,6 @@ const imageDataPath = path.join(tockerRoot, "images");
 const containerDataPath = path.join(tockerRoot, "containers");
 // cgroups限制分组
 const cgroups = "cpu,cpuacct,memory";
-
-subcommand("pull", cmdPull);
-subcommand("images", cmdImages);
-subcommand("rm", cmdRm);
-subcommand("rmi", cmdRmi);
-subcommand("ps", cmdPs);
-subcommand("run", cmdRun);
-subcommand("exec", cmdExec);
-subcommand("logs", cmdLogs);
-subcommand("*", cmdHelp);
-init().then(() => {
-  subcommandstart();
-});
 
 async function init() {
   if (!(await interfaceExists("tocker0"))) {
@@ -56,11 +43,22 @@ iptables -t nat -L -n
   }
 }
 
+subcommand("pull", cmdPull);
+subcommand("images", cmdImages);
+subcommand("rm", cmdRm);
+subcommand("rmi", cmdRmi);
+subcommand("ps", cmdPs);
+subcommand("run", cmdRun);
+subcommand("exec", cmdExec);
+subcommand("logs", cmdLogs);
+subcommand("*", cmdHelp);
+subCommandStart(init);
+
 async function cmdPull(args: any) {
   const { longName, tag } = parseImageName(args[1])!;
   const fullName = getImageFullName(longName, tag);
   const { id, info, raw } = await getImageManifests(longName, tag);
-  console.log(fullName, { id, info, raw });
+  log.debug(fullName, { id, info, raw });
   const imageDir = path.join(imageDataPath, id);
   const rootfs = path.join(imageDir, "rootfs");
   await Deno.mkdirSync(rootfs, { recursive: true });
@@ -99,7 +97,8 @@ async function cmdImages() {
     );
   });
 }
-async function cmdRm(args: any) {}
+async function cmdRm(args: any) {
+}
 async function cmdRmi(args: any) {
   const name = args[1];
   const imageInfo = await findImage(name);
@@ -168,6 +167,7 @@ async function getImageManifests(longName: string, tag: string) {
 async function loadLocalImages() {
   const images: Record<string, any> = {};
   const files = await Deno.readDir(imageDataPath);
+  log.debug({ files });
   for await (const file of files) {
     if (!file.isDirectory) continue;
     const p = path.join(imageDataPath, file.name);

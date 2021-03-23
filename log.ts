@@ -5,7 +5,7 @@ export function setDebug() {
 }
 
 export function debug(...data: any[]) {
-  if(!enableDebug) return;
+  if (!enableDebug) return;
   console.log(...data);
 }
 

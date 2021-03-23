@@ -13,10 +13,12 @@ export async function exec(...cmds: string[]) {
   let cmd;
   try {
     cmd = Deno.run({ cmd: cmds, stdout: "piped", stderr: "piped" });
+    const { success } = await cmd.status();
     const output = await cmd.output();
     const stdout = new TextDecoder().decode(output);
     const error = await cmd.stderrOutput();
     const stderr = new TextDecoder().decode(error);
+    if (!success) throw new Error(stderr);
     return { stdout, stderr };
   } catch (error) {
     throw error;

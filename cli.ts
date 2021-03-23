@@ -10,10 +10,10 @@ export function subcommand(command: string, fn: IFN): boolean {
   return true;
 }
 
-export async function subcommandstart(before?: IFN, after?: IFN) {
+export async function subCommandStart(before?: IFN, after?: IFN) {
   const ret = parse(Deno.args, { "--": false });
-  if (ret.debug) log.setDebug()
-  log.debug(ret)
+  if (ret.debug) log.setDebug();
+  log.debug(ret);
   if (before) await before();
   const command = ret["_"]?.[0];
   try {
